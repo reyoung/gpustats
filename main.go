@@ -1,6 +1,15 @@
 package main
 
-import "github.com/NVIDIA/go-nvml/pkg/nvml"
+import (
+	"flag"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"net/http"
+	"strconv"
+	"time"
+)
 
 func panicNVMLIf(p nvml.Return) {
 	if p != nvml.SUCCESS {
@@ -13,11 +22,55 @@ func panicNVMLT[T any](val T, p nvml.Return) T {
 	return val
 }
 
+var (
+	addr              = flag.String("addr", ":19300", "metric serving address")
+	gUtilizationRates = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "gpustats",
+		Name:      "utilization_rates",
+		Help:      "device utility rate",
+	}, []string{"device_id", "type"})
+	gMemInfo = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "gpustats",
+		Name:      "memory_info",
+		Help:      "device memory info",
+	}, []string{"type"})
+	gPCIEThroughput = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "gpustats",
+		Name:      "memory_info",
+		Help:      "pci-e throghput",
+	}, []string{"type"})
+)
+
+func monitorDevice(devID int) {
+	device := panicNVMLT(nvml.DeviceGetHandleByIndex(devID))
+	devIDStr := strconv.Itoa(devID)
+	for {
+		utilizationRates := panicNVMLT(device.GetUtilizationRates())
+		gUtilizationRates.With(map[string]string{"device_id": devIDStr, "type": "gpu"}).Set(float64(utilizationRates.Gpu))
+		gUtilizationRates.With(map[string]string{"device_id": devIDStr, "type": "memory"}).Set(float64(utilizationRates.Memory))
+		meminfo := panicNVMLT(device.GetMemoryInfo())
+		gMemInfo.WithLabelValues("used").Set(float64(meminfo.Used))
+		gMemInfo.WithLabelValues("freed").Set(float64(meminfo.Free))
+		gMemInfo.WithLabelValues("total").Set(float64(meminfo.Total))
+		gPCIEThroughput.WithLabelValues("tx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_TX_BYTES))))
+		gPCIEThroughput.WithLabelValues("rx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_RX_BYTES))))
+		gPCIEThroughput.WithLabelValues("count").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_COUNT))))
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 func main() {
+	flag.Parse()
 	panicNVMLIf(nvml.Init())
 	defer func() {
 		panicNVMLIf(nvml.Shutdown())
 	}()
 	devCnt := panicNVMLT(nvml.DeviceGetCount())
-	println("device count ", devCnt)
+
+	for i := 0; i < devCnt; i++ {
+		go monitorDevice(i)
+	}
+
+	http.Handle("/metrics", promhttp.Handler())
+	_ = http.ListenAndServe(*addr, nil)
 }
