@@ -33,12 +33,12 @@ var (
 		Namespace: "gpustats",
 		Name:      "memory_info",
 		Help:      "device memory info",
-	}, []string{"type"})
+	}, []string{"device_id", "type"})
 	gPCIEThroughput = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "gpustats",
 		Name:      "pcie_throughput",
 		Help:      "pci-e throughput",
-	}, []string{"type"})
+	}, []string{"device_id", "type"})
 )
 
 func ignorePanic(fn func()) {
@@ -53,17 +53,17 @@ func monitorDevice(devID int) {
 	devIDStr := strconv.Itoa(devID)
 	for {
 		utilizationRates := panicNVMLT(device.GetUtilizationRates())
-		gUtilizationRates.With(map[string]string{"device_id": devIDStr, "type": "gpu"}).Set(float64(utilizationRates.Gpu))
-		gUtilizationRates.With(map[string]string{"device_id": devIDStr, "type": "memory"}).Set(float64(utilizationRates.Memory))
+		gUtilizationRates.WithLabelValues(devIDStr, "gpu").Set(float64(utilizationRates.Gpu))
+		gUtilizationRates.WithLabelValues(devIDStr, "memory").Set(float64(utilizationRates.Memory))
 		meminfo := panicNVMLT(device.GetMemoryInfo())
-		gMemInfo.WithLabelValues("used").Set(float64(meminfo.Used))
-		gMemInfo.WithLabelValues("freed").Set(float64(meminfo.Free))
-		gMemInfo.WithLabelValues("total").Set(float64(meminfo.Total))
+		gMemInfo.WithLabelValues(devIDStr, "used").Set(float64(meminfo.Used))
+		gMemInfo.WithLabelValues(devIDStr, "freed").Set(float64(meminfo.Free))
+		gMemInfo.WithLabelValues(devIDStr, "total").Set(float64(meminfo.Total))
 		ignorePanic(func() {
 			// Some system cannot read pci-e through put
-			gPCIEThroughput.WithLabelValues("tx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_TX_BYTES))))
-			gPCIEThroughput.WithLabelValues("rx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_RX_BYTES))))
-			gPCIEThroughput.WithLabelValues("count").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_COUNT))))
+			gPCIEThroughput.WithLabelValues(devIDStr, "tx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_TX_BYTES))))
+			gPCIEThroughput.WithLabelValues(devIDStr, "rx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_RX_BYTES))))
+			gPCIEThroughput.WithLabelValues(devIDStr, "count").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_COUNT))))
 		})
 		time.Sleep(500 * time.Millisecond)
 	}
