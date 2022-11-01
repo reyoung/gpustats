@@ -41,6 +41,13 @@ var (
 	}, []string{"type"})
 )
 
+func ignorePanic(fn func()) {
+	defer func() {
+		recover()
+	}()
+	fn()
+}
+
 func monitorDevice(devID int) {
 	device := panicNVMLT(nvml.DeviceGetHandleByIndex(devID))
 	devIDStr := strconv.Itoa(devID)
@@ -52,9 +59,12 @@ func monitorDevice(devID int) {
 		gMemInfo.WithLabelValues("used").Set(float64(meminfo.Used))
 		gMemInfo.WithLabelValues("freed").Set(float64(meminfo.Free))
 		gMemInfo.WithLabelValues("total").Set(float64(meminfo.Total))
-		gPCIEThroughput.WithLabelValues("tx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_TX_BYTES))))
-		gPCIEThroughput.WithLabelValues("rx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_RX_BYTES))))
-		gPCIEThroughput.WithLabelValues("count").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_COUNT))))
+		ignorePanic(func() {
+			// Some system cannot read pci-e through put
+			gPCIEThroughput.WithLabelValues("tx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_TX_BYTES))))
+			gPCIEThroughput.WithLabelValues("rx").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_RX_BYTES))))
+			gPCIEThroughput.WithLabelValues("count").Set(float64(panicNVMLT(device.GetPcieThroughput(nvml.PCIE_UTIL_COUNT))))
+		})
 		time.Sleep(500 * time.Millisecond)
 	}
 }
