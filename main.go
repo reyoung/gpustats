@@ -36,8 +36,8 @@ var (
 	}, []string{"type"})
 	gPCIEThroughput = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "gpustats",
-		Name:      "memory_info",
-		Help:      "pci-e throghput",
+		Name:      "pcie_throughput",
+		Help:      "pci-e throughput",
 	}, []string{"type"})
 )
 
